@@ -34,7 +34,7 @@ end
 puts 'EventManager initialized.'
 
 contents = CSV.open(
-  File.expand_path('../../event_attendees.csv', __FILE__),
+  'event_attendees.csv',
   headers: true,
   header_converters: :symbol
 )
