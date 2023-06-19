@@ -6,6 +6,21 @@ def clean_zipcode(zipcode)
   zipcode.to_s.rjust(5,"0")[0..4]
 end
 
+def clean_phone_number(phone_number)
+  return nil if phone_number.nil?
+
+  digits = phone_number.gsub(/\D/, '')
+
+  case digits.length
+  when 10
+    digits
+  when 11
+    digits[0] == '1' ? digits[1..-1] : nil
+  else
+    nil
+  end
+end
+
 def legislators_by_zipcode(zip)
   civic_info = Google::Apis::CivicinfoV2::CivicInfoService.new
   civic_info.key = 'AIzaSyClRzDqDh5MsXwnCWi0kOiiBivP6JsSyBw'
@@ -34,12 +49,12 @@ end
 puts 'EventManager initialized.'
 
 contents = CSV.open(
-  'event_attendees.csv',
+  File.expand_path('../event_attendees.csv', __FILE__),
   headers: true,
   header_converters: :symbol
 )
 
-template_letter = File.read('form_letter.erb')
+template_letter = File.read('lib/form_letter.erb')
 erb_template = ERB.new template_letter
 
 contents.each do |row|
