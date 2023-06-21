@@ -1,69 +1,56 @@
-require 'csv'
-require 'google/apis/civicinfo_v2'
 require 'erb'
+require_relative 'event_data'
+require_relative 'helper_methods'
 
-def clean_zipcode(zipcode)
-  zipcode.to_s.rjust(5,"0")[0..4]
-end
+class EventManager
+  def initialize
+    @data = EventData.new
+    @template_letter = File.read('lib/form_letter.erb')
+    @erb_template = ERB.new(@template_letter)
+    @registration_hours = Hash.new(0)
+    @registration_days = Hash.new(0)
+  end
 
-def clean_phone_number(phone_number)
-  return nil if phone_number.nil?
+  def run
+    puts "Event Manager Initialized"
+    process_attendees
+    print_peak_hours
+    print_peak_days
+  end
 
-  digits = phone_number.gsub(/\D/, '')
+  private
 
-  case digits.length
-  when 10
-    digits
-  when 11
-    digits[0] == '1' ? digits[1..-1] : nil
-  else
-    nil
+  def process_attendees
+    @data.contents.each do |row|
+      id = row[0]
+      name = row[:first_name]
+      zipcode = HelperMethods.clean_zipcode(row[:zipcode])
+      legislators = HelperMethods.legislators_by_zipcode(zipcode)
+      registration_timestamp = DateTime.strptime(row[:regdate], '%m/%d/%y %H:%M')
+      registration_hour = registration_timestamp.hour
+      @registration_hours[registration_hour] += 1
+      registration_day = registration_timestamp.wday
+      @registration_days[registration_day] += 1
+
+      form_letter = @erb_template.result(binding)
+      HelperMethods.save_thank_you_letter(id, form_letter)
+    end
+  end
+
+  def print_peak_hours
+    peak_hours = @registration_hours.select { |_hour, count| count == @registration_hours.values.max }
+    peak_hours = peak_hours.keys.sort.join(', ')
+
+    puts "Peak registration hour(s): #{peak_hours}"
+  end
+
+  def print_peak_days
+    peak_days = @registration_days.select { |_day, count| count == @registration_days.values.max }
+    peak_days = peak_days.keys.sort.map { |day| Date::DAYNAMES[day] }.join(', ')
+
+    puts "Peak registration day(s): #{peak_days}"
   end
 end
 
-def legislators_by_zipcode(zip)
-  civic_info = Google::Apis::CivicinfoV2::CivicInfoService.new
-  civic_info.key = 'AIzaSyClRzDqDh5MsXwnCWi0kOiiBivP6JsSyBw'
-
-  begin
-    civic_info.representative_info_by_address(
-      address: zip,
-      levels: 'country',
-      roles: ['legislatorUpperBody', 'legislatorLowerBody']
-    ).officials
-  rescue
-    'You can find your representatives by visiting www.commoncause.org/take-action/find-elected-officials'
-  end
-end
-
-def save_thank_you_letter(id,form_letter)
-  Dir.mkdir('output') unless Dir.exist?('output')
-
-  filename = "output/thanks_#{id}.html"
-
-  File.open(filename, 'w') do |file|
-    file.puts form_letter
-  end
-end
-
-puts 'EventManager initialized.'
-
-contents = CSV.open(
-  File.expand_path('../event_attendees.csv', __FILE__),
-  headers: true,
-  header_converters: :symbol
-)
-
-template_letter = File.read('lib/form_letter.erb')
-erb_template = ERB.new template_letter
-
-contents.each do |row|
-  id = row[0]
-  name = row[:first_name]
-  zipcode = clean_zipcode(row[:zipcode])
-  legislators = legislators_by_zipcode(zipcode)
-
-  form_letter = erb_template.result(binding)
-
-  save_thank_you_letter(id,form_letter)
-end
+event_manager = EventManager.new
+event_manager.run
